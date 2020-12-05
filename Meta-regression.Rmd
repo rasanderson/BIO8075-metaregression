@@ -45,14 +45,14 @@ What is more surprising is the amount of variation shown by the fixed-effect met
 This is where meta-regression becomes useful. Berkey _et al._ (1995) did not know the actual storage temperature of the BCG vaccine, or whether it had been exposed to sunlight, but inferred it for the above studies from latitude: higher latitudes are generally cooler and have less sunlight.
 
 # The BCG dataset and fixed- vs random-effects meta-regression
-Load up the `tidyverse` and `metafor` libraries, then read in the BCG dataset, adapted from Borenstein Chapter 20, and examine it:
+Load up the `mosaic` and `metafor` libraries, then read in the BCG dataset, adapted from Borenstein Chapter 20, and examine it:
 
-```{r load tidyverse and metafor, echo=FALSE, message=FALSE, warning=FALSE}
-library(tidyverse)
+```{r load_metafor, echo=FALSE, message=FALSE, warning=FALSE}
 library(metafor)
+library(mosaic)
 ```
 ```{r read and check the BCG data}
-bcg <- read_csv("Data/Borenstein_p190.csv")
+bcg <- read.csv("Data/Borenstein_p190.csv")
 print(bcg)
 ```
 In the output table, `tpos` is the number of vaccinated individuals that still caught TB, `tneg` is the number of vaccinated individuals that did not catch TB, whilst the equivalent figures for the non-vaccinated controls are in `cpos` and `cneg`. The lattitude is in `ablat` (absolute latitude north or south in degrees).
@@ -133,14 +133,19 @@ ln(RR) = 0.3436 -0.0292 x latitude
 which can be visualised via:
 
 ```{r basic plot of meta-regression}
+# Plot use standard base graphics
 plot(bcg.eff$ablat, exp(bcg.eff$yi), xlab="Absolute latitude", ylab=
         "Risk ratio", log="y")
-reg_plot <- ggplot(aes(x=ablat, y=exp(yi)), data=bcg.eff) +
-   geom_point() +
-   xlab("Absolute latitude") +
-   ylab("Risk ratio") +
-   theme_classic()
-reg_plot
+
+# Plot using mosaic gf_ functions
+reg_plt <- gf_point(exp(yi) ~ ablat, data=bcg.eff) %>%  
+   gf_labs(x = "Absolute latitude", y = "Risk ratio") # %>% 
+   #gf_refine(coord_trans(y="exp"), theme_classic())
+reg_plt
+
+# Alternative approach using gf_ functions
+#gf_pointexp((yi) ~ ablat, data=bcg.eff) %>%  
+#   gf_labs(x = "Absolute latitude", y = "Risk ratio")
 ```
 
 Notice that in the above `ggplot` command we are directing the results to a `ggplot` object, `reg_plot` which we then display by giving its name on its own.  I find this a useful way of building up complex plots, as we can gradually add extra elements to the plot, and work out any errors.  We use the `xlab` and `ylab` options to label the axes, and as I think the black-and-white option looks nicer, have set it to the "classic" (this is just personal preference!).
@@ -150,34 +155,43 @@ This plot is not particularly informative, as it does not include the predicted 
 The predicted risk ratios, and their upper and lower 95% confidence intervals, can be calulated via `predict` function against the `bcg_fe.rma` that we calculated earlier:
 
 ```{r predicted regression plus ci}
+# Calculate predicted regression line, plus 95% CI
 preds <- predict(bcg_fe_metareg.rma, newmods=bcg$ablat, transf=exp)
+
+# Create a dataframe that includes predictions, original data, and effect size
+preds <- data.frame(cbind(preds, bcg), yi = bcg.eff$yi)
+head(preds)
 ```
 
 Now we can easily add these lines to our plot. The option `lty = 2` sets the linetype to a "dashed" line. See <http://www.cookbook-r.com/Graphs/Shapes_and_line_types/> for a list of shape and line codes.  Please ask if the following lines of code are unclear:
 
 ```{r add meta-regression line}
-reg_plot <- reg_plot +
-   scale_y_continuous(trans = "log") +
-   geom_hline(yintercept = 1.0, lty = 2) +
-   geom_line(aes(x=bcg$ablat, y=preds$pred)) +
-   geom_line(aes(x=bcg$ablat, y=preds$ci.ub), lty=2) +
-   geom_line(aes(x=bcg$ablat, y=preds$ci.lb), lty=2)
-reg_plot
+gf_point(exp(yi) ~ ablat, data=preds) %>%  
+   gf_labs(x = "Absolute latitude", y = "Risk ratio") %>%
+   gf_hline(yintercept = 1.0, lty = 2) %>% 
+   gf_line(pred ~ ablat) %>% 
+   gf_line(ci.ub ~ ablat, lty = 2) %>% 
+   gf_line(ci.lb ~ ablat, lty = 2) %>% 
+   gf_refine(coord_trans(y = "log"))
 ```
 
 Finally, let's make the point size of the studies bigger if they carry more weight, and also change the y-axis tick-marks to 0.2, 0.4, 0.6 etc.  Remember that the weights are calculated simply as 1/se for each study:
 
 ```{r completed meta-regression plot}
 wi <- 1 / sqrt(bcg.eff$vi)
-size  <- 0.5 + 8.0 * (wi - min(wi))/(max(wi) - min(wi))
+point_size  <- 0.5 + 8.0 * (wi - min(wi))/(max(wi) - min(wi))
 
-reg_plot <- reg_plot +
-   geom_point(size = size) +
-   scale_y_continuous(breaks=seq(from=0.2, to=1.6, by=0.2), trans="log") 
-reg_plot
+gf_point(exp(yi) ~ ablat, size = point_size, data=preds) %>%  
+   gf_labs(x = "Absolute latitude", y = "Risk ratio") %>%
+   gf_hline(yintercept = 1.0, lty = 2) %>% 
+   gf_line(pred ~ ablat) %>% 
+   gf_line(ci.ub ~ ablat, lty = 2) %>% 
+   gf_line(ci.lb ~ ablat, lty = 2) %>% 
+   gf_refine(coord_trans(y = "log")) %>% 
+   gf_refine(scale_y_continuous(breaks = seq(from=0.2, to=1.6, by=0.2)))
 ```
 
-It would have been more convenient if there was a `ggplot` function that handled `rma` outputs directly.  You can also read how to create this type of meta-regression plot on the metafor website at <http://www.metafor-project.org/doku.php/plots:meta_analytic_scatterplot>
+It would have been more convenient if there was a `ggformula` function that handled `rma` outputs directly.  You can also read how to create this type of meta-regression plot at [the metafor website](http://www.metafor-project.org/doku.php/plots:meta_analytic_scatterplot)
 
 
 # Random-effects meta-regression
